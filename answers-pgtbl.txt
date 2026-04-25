@@ -1,0 +1,14 @@
+Speed up system calls
+Which other xv6 system call(s) could be made faster using this shared page? Explain how.
+需要从内核空间和用户空间交换信息的系统调用都可以被加速，比如fstat()，内核态可以把进程文件状态信息放入共享也，用户态可以直接读取而不用trap到内核态中，省去trap的开销
+how: 共享页避免了用户态和内核态切换的开销，进程可以在用户态直接读共享页拿到结果。
+
+Print a page table 
+Explain the output of vmprint in terms of Fig 3-4 from the text. What does page 0 contain? What is in page 2?
+When running in user mode, could the process read/write the memory mapped by page 1?
+What does the third to last page contain?
+
+page 0 是用户程序的代码和数据（text/data段），对应 Fig 3-4 最底部的 user text and data。
+page 2 是用户栈（user stack），对应 Fig 3-4 中的 stack 部分，存放函数调用栈帧、局部变量等。
+不能。page 1 是 guard page，其 PTE 的 PTE_U 位为0，用户模式下无法访问，访问会触发 page fault。它的作用是检测栈溢出。
+倒数第三页是 USYSCALL 页，存放 struct usyscall，包含当前进程的 pid，是第一个练习实现的共享页。

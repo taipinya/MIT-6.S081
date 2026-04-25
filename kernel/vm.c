@@ -84,14 +84,14 @@ walk(pagetable_t pagetable, uint64 va, int alloc)
     panic("walk");
 
   for(int level = 2; level > 0; level--) {
-    pte_t *pte = &pagetable[PX(level, va)];
+    pte_t *pte = &pagetable[PX(level, va)];  //PX（）提取对应层级的索引
     if(*pte & PTE_V) {
       pagetable = (pagetable_t)PTE2PA(*pte);
     } else {
       if(!alloc || (pagetable = (pde_t*)kalloc()) == 0)
         return 0;
       memset(pagetable, 0, PGSIZE);
-      *pte = PA2PTE(pagetable) | PTE_V;
+      *pte = PA2PTE(pagetable) | PTE_V;  // 把新页表的地址填入当前PTE
     }
   }
   return &pagetable[PX(0, va)];
@@ -431,4 +431,38 @@ copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
   } else {
     return -1;
   }
+}
+
+// Recursively print page-table pages.
+void
+my_vmprint(pagetable_t pagetable, int depth)
+{
+  // there are 2^9 = 512 PTEs in a page table.
+  for(int i = 0; i < 512; i++){
+    pte_t pte = pagetable[i];
+    if(!(pte & PTE_V)) continue; //无效PTE跳过
+
+    for(int k = depth; k > 0; k--){  //有效页表项才打印缩进
+    if(k == 1) printf("..");
+    else printf(" ..");
+  }
+
+    printf("%d: pte %p pa %p\n",i, pte, PTE2PA(pte));
+
+    if((pte & PTE_V) && (pte & (PTE_R|PTE_W|PTE_X)) == 0){
+      // this PTE points to a lower-level page table.
+      //PTE2PA获得下一级页表的地址
+      my_vmprint((pagetable_t)PTE2PA(pte), depth + 1);
+    }
+
+  }
+}
+
+void
+vmprint(pagetable_t pagetable)
+{
+  printf("page table %p\n", pagetable);
+
+  my_vmprint(pagetable, 1);
+  return;
 }

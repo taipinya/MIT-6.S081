@@ -7,6 +7,8 @@
 #include "spinlock.h"
 #include "proc.h"
 
+extern pte_t * walk(pagetable_t, uint64, int);
+
 uint64
 sys_exit(void)
 {
@@ -81,6 +83,35 @@ int
 sys_pgaccess(void)
 {
   // lab pgtbl: your code here.
+  uint64  startva;
+  int pgnum;
+  int bitmask = 0;
+  uint64 ubmaddr;
+
+  if(argaddr(0, &startva) < 0 || argint(1, &pgnum) < 0 || argaddr(2, &ubmaddr) < 0)//每个函数返回-1表示失败
+    return -1;
+
+  if(pgnum > 32) //设置查找页数上限
+    return -1;
+  
+  
+  pagetable_t pagetable = myproc()->pagetable;
+  uint64 va;
+  pte_t *pte;
+
+  for(int i = 0; i < pgnum; i++){
+    va = startva + i*PGSIZE;
+    pte = walk(pagetable, va, 0);
+    if(pte == 0)continue; //若找不到walk()会返回0
+
+    if(*pte & PTE_A){
+      //已访问
+      bitmask |= (1 << i); //第i为置1
+      *pte &= ~PTE_A;  //清除访存位；
+    }
+  }
+
+  copyout(pagetable, ubmaddr, (char *)&bitmask, sizeof(int));
   return 0;
 }
 #endif
