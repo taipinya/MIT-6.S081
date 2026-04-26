@@ -77,8 +77,23 @@ usertrap(void)
     exit(-1);
 
   // give up the CPU if this is a timer interrupt.
-  if(which_dev == 2)
+  if(which_dev == 2){
+    if(p->alarm_interval != 0){
+      p->alarm_ticks--;
+      if(p->alarm_ticks == 0 && p->alarm_flag == 1){
+        //触发handler
+        //alarm_handler 是用户空间的函数地址，内核和用户空间是完全隔离的。
+        //让用户态返回时跳到 handler，而不是内核直接调用。修改 trapframe 里的 epc
+        p->alarm_flag = 0;
+        // 保存整个trapframe,保存内容而不是指针！！
+        *p->alarm_trapframe = *p->trapframe;
+        p->trapframe->epc = (uint64)p->alarm_handler;
+        p->alarm_ticks = p->alarm_interval;
+      }
+    }
     yield();
+  }
+    
 
   usertrapret();
 }

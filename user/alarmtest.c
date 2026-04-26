@@ -86,7 +86,7 @@ test1()
   j = 0;
   sigalarm(2, periodic);
   for(i = 0; i < 500000000; i++){
-    if(count >= 10)
+    if(count >= 10)  //节省时间，保证循环会结束
       break;
     foo(i, &j);
   }
@@ -100,8 +100,10 @@ test1()
     // occurred; another is that that registers may not be
     // restored correctly, causing i or j or the address ofj
     // to get an incorrect value.
+    
     printf("\ntest1 failed: foo() executed fewer times than it was called\n");
   } else {
+    printf("i:%d, j:%d\n",i ,j);
     printf("test1 passed\n");
   }
 }
