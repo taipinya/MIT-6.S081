@@ -1,0 +1,29 @@
+Which registers contain arguments to functions? For example, which register holds 13 in main's call to printf?
+a0,a2;a2;
+
+Where is the call to function f in the assembly code for main? Where is the call to g? (Hint: the compiler may inline functions.)
+两者都不存在于汇编代码中。编译器将 f 和 g 内联（inline）到 main 里，并进一步做常量折叠，最终 f(8)+1 变成了立即数 12，没有产生任何 call/jalr 指令。
+
+At what address is the function printf located?
+0x630
+
+What value is in the register ra just after the jalr to printf in main?
+0x38
+
+Run the following code.
+
+	unsigned int i = 0x00646c72;
+	printf("H%x Wo%s", 57616, &i);
+      
+What is the output? Here's an ASCII table that maps bytes to characters.
+He110 World
+
+The output depends on that fact that the RISC-V is little-endian. 
+If the RISC-V were instead big-endian what would you set i to in order to yield the same output? Would you need to change 57616 to a different value?
+unsigned int i = 0x726c6400;
+
+In the following code, what is going to be printed after 'y='? (note: the answer is not a specific value.) Why does this happen?
+
+	printf("x=%d y=%d", 3);
+x=3 y=1
+y对应的值存放在a2中，但是调用者并没设置，所以程序只管去读a2，a2里存的是上一次使用该寄存器的代码留下的残留值，是未定义的垃圾值

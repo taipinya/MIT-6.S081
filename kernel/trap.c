@@ -30,7 +30,7 @@ trapinithart(void)
 }
 
 //
-// handle an interrupt, exception, or system call from user space.
+// handle an interrupt, exception(异常), or system call from user space.
 // called from trampoline.S
 //
 void
@@ -97,6 +97,8 @@ usertrapret(void)
   intr_off();
 
   // send syscalls, interrupts, and exceptions to trampoline.S
+  //uservec 是链接器给的地址，和 trampoline 在同一个地址空间里（链接地址）。但 CPU 执行时用的是虚拟地址
+  //uservec 在 trampoline 页内的偏移量加上虚拟页起始地址= uservec 的【虚拟地址】
   w_stvec(TRAMPOLINE + (uservec - trampoline));
 
   // set up trapframe values that uservec will need when
