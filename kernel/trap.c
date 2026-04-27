@@ -67,7 +67,25 @@ usertrap(void)
     syscall();
   } else if((which_dev = devintr()) != 0){
     // ok
-  } else {
+  } else if(r_scause() == 15){
+    //若发生pagefault,读取出错的虚拟地址,找到对应的pte
+    uint64 va = r_stval();
+    if(va >= MAXVA){
+        p->killed = 1;
+    } 
+    else {
+          pte_t *pte = walk(p->pagetable, va, 0);
+          if(pte == 0 || !(*pte & PTE_COW)){ //防止pte为空和其他异常情况
+             p->killed = 1;
+             }
+          //COW处理
+          else{
+            if(cow_handle(p->pagetable, va) < 0)
+              p->killed = 1;  // 包含内存分配不足的情况，杀死进程
+            }                  //不使用exit(-1)是因为此时可能持有锁或者处于不适合立刻退出的状态
+    }
+  }
+  else {
     printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
     printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());
     p->killed = 1;

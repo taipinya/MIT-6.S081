@@ -15,6 +15,9 @@ extern char etext[];  // kernel.ld sets this to end of kernel code.
 
 extern char trampoline[]; // trampoline.S
 
+extern struct spinlock cow_lock;
+extern int cow_refcount[];
+
 // Make a direct-map page table for the kernel.
 pagetable_t
 kvmmake(void)
@@ -303,7 +306,6 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
   pte_t *pte;
   uint64 pa, i;
   uint flags;
-  char *mem;
 
   for(i = 0; i < sz; i += PGSIZE){
     if((pte = walk(old, i, 0)) == 0)
@@ -311,7 +313,10 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
     if((*pte & PTE_V) == 0)
       panic("uvmcopy: page not present");
     pa = PTE2PA(*pte);
+    *pte &= ~PTE_W;  //将写标志置为0
+    *pte |= PTE_COW; //将COW标志位置为1
     flags = PTE_FLAGS(*pte);
+    /*
     if((mem = kalloc()) == 0)
       goto err;
     memmove(mem, (char*)pa, PGSIZE);
@@ -319,6 +324,15 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
       kfree(mem);
       goto err;
     }
+    */
+   //直接将父进程的物理页映射到子进程,注意第三个参数是物理地址pa;pte是包含pa和标志位的
+   if(mappages(new, i, PGSIZE, pa, flags) != 0){
+      goto err;
+    }
+    //映射成功，该物理页的引用数加一
+    acquire(&cow_lock);
+    cow_refcount[pa/PGSIZE] += 1;
+    release(&cow_lock);
   }
   return 0;
 
@@ -350,6 +364,17 @@ copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
 
   while(len > 0){
     va0 = PGROUNDDOWN(dstva);
+
+    if(va0 >= MAXVA)
+        return -1;
+
+    //判断是否是COW页
+    pte_t *pte = walk(pagetable, va0, 0);
+    if(pte && (*pte & PTE_COW)){
+      if(cow_handle(pagetable, va0) < 0)
+        return -1;
+    }
+
     pa0 = walkaddr(pagetable, va0);
     if(pa0 == 0)
       return -1;
@@ -431,4 +456,33 @@ copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
   } else {
     return -1;
   }
+}
+
+//使用这两个参数而不是直接传pte使得函数语义更清晰
+int cow_handle(pagetable_t pagetable, uint64 va)
+{
+  if(va >= MAXVA){
+        return -1;
+    } 
+  //分配新的物理页
+  char* mem;
+  if((mem = kalloc()) == 0){
+    return -1;
+  }
+
+  //复制原物理页上的内容
+  pte_t *pte = walk(pagetable, va, 0);
+  if(pte == 0) return -1;
+
+  uint64 oldpa = PTE2PA(*pte);
+  memmove(mem, (char*)oldpa, PGSIZE);
+  //drop旧页，注意类型转换
+  kfree((void*)oldpa);
+  //修改PTE
+  uint flags = PTE_FLAGS(*pte);
+  flags |= PTE_W;
+  flags &= ~PTE_COW; //记得修改COW标志位！！
+  *pte = PA2PTE((uint64)mem) | flags;
+
+  return 0;
 }
