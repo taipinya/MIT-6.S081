@@ -9,7 +9,7 @@ static int round = 0;
 
 struct barrier {
   pthread_mutex_t barrier_mutex;
-  pthread_cond_t barrier_cond;
+  pthread_cond_t barrier_cond;//一个等待队列，存的是"正在睡眠等待的线程列表"。
   int nthread;      // Number of threads that have reached this round of the barrier
   int round;     // Barrier round
 } bstate;
@@ -25,12 +25,25 @@ barrier_init(void)
 static void 
 barrier()
 {
-  // YOUR CODE HERE
-  //
-  // Block until all threads have called barrier() and
-  // then increment bstate.round.
-  //
-  
+  pthread_mutex_lock(&bstate.barrier_mutex); //加锁
+
+  bstate.nthread++; //多线程可访问，所以需要获取锁后再加加
+
+  if(bstate.nthread == nthread){
+    bstate.round++;
+    bstate.nthread = 0; //计数器重置
+    pthread_cond_broadcast(&bstate.barrier_cond);
+  }
+  else{
+    int my_round = bstate.round;
+    while(my_round == bstate.round){
+      //pthread_cond_wait可能会在没有广播时自己醒来，所以需要用循环睡眠
+      pthread_cond_wait(&bstate.barrier_cond, &bstate.barrier_mutex);
+    }
+  }
+
+  pthread_mutex_unlock(&bstate.barrier_mutex); //解锁
+
 }
 
 static void *
