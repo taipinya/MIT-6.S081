@@ -95,26 +95,77 @@ e1000_init(uint32 *xregs)
 int
 e1000_transmit(struct mbuf *m)
 {
-  //
-  // Your code here.
-  //
   // the mbuf contains an ethernet frame; program it into
   // the TX descriptor ring so that the e1000 sends it. Stash
   // a pointer so that it can be freed after sending.
   //
-  
+
+  acquire(&e1000_lock);
+  //上一轮未完成，返回错误
+  uint32 idx = regs[E1000_TDT];
+  if((tx_ring[idx].status & E1000_TXD_STAT_DD) == 0){
+    release(&e1000_lock);  
+    return -1;
+  }
+
+  //释放旧的mbuf,初始tx_mbufs[idx]为NULL，所以需要判断
+  if(tx_mbufs[idx]){
+    mbuffree(tx_mbufs[idx]);
+  }
+
+  tx_mbufs[idx] = m;
+  tx_ring[idx].addr = (uint64)m->head;
+  tx_ring[idx].length = m->len;
+  tx_ring[idx].cmd = E1000_TXD_CMD_RS | E1000_TXD_CMD_EOP;
+  // RS  = 发完后把 DD 置1
+  // EOP = End Of Packet，这个描述符是完整一帧
+
+  regs[E1000_TDT] = (idx + 1)%TX_RING_SIZE;
+  release(&e1000_lock);
+
   return 0;
 }
 
 static void
 e1000_recv(void)
 {
-  //
-  // Your code here.
-  //
   // Check for packets that have arrived from the e1000
   // Create and deliver an mbuf for each packet (using net_rx()).
   //
+  acquire(&e1000_lock);
+  uint32 idx;
+
+  //循环将每个mbuf的数据放入net stack
+  while(1){
+
+    //regs[E1000_RDT]存储最后一个已处理包的位置
+    idx = (regs[E1000_RDT] + 1)% RX_RING_SIZE;
+
+
+    //没有需要写入的包
+    if((rx_ring[idx].status & E1000_RXD_STAT_DD) == 0){
+      break;
+    }
+    //将数据包交给net stack
+    struct mbuf* mbuf = rx_mbufs[idx];
+    mbuf->len = rx_ring[idx].length; //注意mbuf不知道数据长度
+      //分配新mbuf
+    struct mbuf* new_mbuf = mbufalloc(0);
+    rx_ring[idx].addr = (uint64)new_mbuf->head; 
+    rx_ring[idx].status = 0;
+    rx_mbufs[idx] = new_mbuf;
+    
+
+    release(&e1000_lock);
+    net_rx(mbuf);
+    acquire(&e1000_lock);
+
+    //更新队尾索引
+    regs[E1000_RDT] = idx;
+  }
+
+  release(&e1000_lock);
+  return;
 }
 
 void

@@ -115,7 +115,7 @@ struct tx_desc
 // [E1000 3.2.3]
 struct rx_desc
 {
-  uint64 addr;       /* Address of the descriptor's data buffer */
+  uint64 addr;       /* Address of the descriptor's data buffer ，m->head*/
   uint16 length;     /* Length of data DMAed into data buffer */
   uint16 csum;       /* Packet checksum */
   uint8 status;      /* Descriptor status */
