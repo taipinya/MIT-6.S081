@@ -484,3 +484,30 @@ sys_pipe(void)
   }
   return 0;
 }
+
+uint64
+sys_symlink(void)
+{
+  struct inode* ip;
+  //取参数target和path
+  char target[MAXPATH],path[MAXPATH];
+  if(argstr(0, target, MAXPATH) < 0 || argstr(1, path, MAXPATH) < 0){
+    return -1;
+  }
+
+  begin_op();
+  //创建inode
+  ip = create(path, T_SYMINK, 0, 0);
+  if(ip == 0){
+    end_op;
+    return -1;
+  }
+
+  //写入target,因为连同\0写入所以长度加一
+  writei(ip, 0, (uint64)target, 0, strlen(target) + 1);
+  
+  iunlockput(ip);
+  end_op();
+
+  return 0;
+}
