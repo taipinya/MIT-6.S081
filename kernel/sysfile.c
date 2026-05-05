@@ -330,6 +330,29 @@ sys_open(void)
     return -1;
   }
 
+  //SYMLINK类型的处理
+  if(ip->type == T_SYMLINK && !(omode & O_NOFOLLOW)){
+    int depth = 0;
+    //循环处理嵌套链接情况，最多十层
+    while(ip->type == T_SYMLINK && !(omode & O_NOFOLLOW)){
+      if(depth++ >= 10){
+        iunlockput(ip);
+        end_op();
+        return -1;
+      }
+      char target[MAXPATH];
+      readi(ip, 0, (uint64)target, 0, MAXPATH);
+      iunlockput(ip);
+
+      if((ip = namei(target)) == 0){
+        end_op();
+        return -1;
+      }
+
+      ilock(ip);
+}
+  }
+
   if(ip->type == T_DEVICE){
     f->type = FD_DEVICE;
     f->major = ip->major;
@@ -497,14 +520,19 @@ sys_symlink(void)
 
   begin_op();
   //创建inode
-  ip = create(path, T_SYMINK, 0, 0);
+  ip = create(path, T_SYMLINK, 0, 0);
   if(ip == 0){
-    end_op;
+    end_op();
     return -1;
   }
 
   //写入target,因为连同\0写入所以长度加一
-  writei(ip, 0, (uint64)target, 0, strlen(target) + 1);
+  int len = strlen(target) + 1;
+  if(writei(ip, 0, (uint64)target, 0, len) != len){
+    iunlockput(ip);
+    end_op();
+    return -1;
+  }
   
   iunlockput(ip);
   end_op();
