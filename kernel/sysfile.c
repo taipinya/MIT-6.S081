@@ -15,6 +15,7 @@
 #include "sleeplock.h"
 #include "file.h"
 #include "fcntl.h"
+#include "memlayout.h"
 
 // Fetch the nth word-sized system call argument as a file descriptor
 // and return both the descriptor and the corresponding struct file.
@@ -492,7 +493,68 @@ int do_munmap(uint64 addr, uint64 length){
 uint64
 sys_mmap(void)
 {
-  return -1;
+  uint64 addr;
+  int length;
+  int prot;
+  int flags;
+  int fd;
+  int offset;
+  struct file *file;
+  struct proc *p = myproc();
+
+  //取参
+  argaddr(0, &addr);
+  argint(1, &length);
+  argint(2, &prot);
+  argint(3, &flags);
+  if(argfd(4, &fd, &file) < 0)
+    return -1;
+  argint(5, &offset);
+
+  if(length <= 0 || addr != 0 || offset != 0)
+    return -1;
+
+  //语义检查
+  if((prot & PROT_WRITE) && (flags & MAP_SHARED) && !file->writable)
+    return -1;
+  if((prot & PROT_READ) && !file->readable)
+    return -1;
+  
+  //找空闲VMA
+  int idx = -1;
+  for(int i = 0; i < NVMA; i++){
+    if(p->vmas[i].used == 0){
+      idx = i;
+      break;
+    }
+  }
+  if(idx < 0){
+    return -1;
+  }
+
+  //找最低地址
+  uint64 top = MMAPTOP;
+  for(int i = 0; i < NVMA; i++){
+    if(p->vmas[i].used == 1 && p->vmas[i].addr < top){
+      top = p->vmas[i].addr;
+    }
+  }
+
+  //分配虚拟内存地址
+  uint64 maplen = PGROUNDUP(length); //把用户请求的 length 向上取整到页大小的整数倍。
+  uint64 va = top - maplen;
+  if(va < p->sz)
+    return -1;  //防止污染heap
+
+
+  p->vmas[idx].used = 1;
+  p->vmas[idx].addr = va;
+  p->vmas[idx].length = maplen;   
+  p->vmas[idx].prot = prot;
+  p->vmas[idx].flags = flags;
+  p->vmas[idx].file = filedup(file);
+
+  return va;
 }
 
 uint64

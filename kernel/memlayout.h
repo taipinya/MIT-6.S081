@@ -65,3 +65,4 @@
 //   TRAPFRAME (p->trapframe, used by the trampoline)
 //   TRAMPOLINE (the same page as in the kernel)
 #define TRAPFRAME (TRAMPOLINE - PGSIZE)
+#define MMAPTOP TRAPFRAME //把 TRAPFRAME 当成 mmap 区域的上边界

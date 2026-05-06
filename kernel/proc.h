@@ -90,7 +90,7 @@ struct vma{
   int prot;  //权限
   int flags;  //修改后是否写回
   struct file *file;  //映射的文件
-}
+};
 
 // Per-process state
 struct proc {
@@ -115,5 +115,5 @@ struct proc {
   struct file *ofile[NOFILE];  // Open files
   struct inode *cwd;           // Current directory
   char name[16];               // Process name (debugging)
-  struct vms vmas[NVAM];         //一个进程最多允许16个 mmap 区域
+  struct vma vmas[NVMA];         //一个进程最多允许16个 mmap 区域
 };
