@@ -446,8 +446,9 @@ int mmap_pagefault(uint64 va, uint64 scause)
   struct proc *p = myproc();
   int idx = -1;
   for(int i = 0; i < NVMA; i++){
-    if(p->vmas[i].used == 1 && va0 > p->vmas[i].addr && va0 < p->vmas[i].addr + p->vmas[i].length){
+    if(p->vmas[i].used == 1 && va0 >= p->vmas[i].addr && va0 < p->vmas[i].addr + p->vmas[i].length){
       idx = i;
+      break;
     }
   }
 
@@ -468,7 +469,9 @@ int mmap_pagefault(uint64 va, uint64 scause)
 
   //从文件读入内容到物理页
   ilock(v->file->ip);
-  int n = readi(v->file->ip, 0, (uint64)mem, va0 - v->addr, PGSIZE);
+  int n = readi(v->file->ip, 0, (uint64)mem,
+              v->offset + (va0 - v->addr),
+              PGSIZE);
   iunlock(v->file->ip);
 
   if(n < 0){
@@ -489,4 +492,31 @@ int mmap_pagefault(uint64 va, uint64 scause)
   }
 
   return 0;
+}
+
+void
+uvmunmap_mmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
+{
+  uint64 a;
+  pte_t *pte;
+
+  if((va % PGSIZE) != 0)
+    panic("uvmunmap_mmap: not aligned");
+
+  for(a = va; a < va + npages * PGSIZE; a += PGSIZE){
+    if((pte = walk(pagetable, a, 0)) == 0)
+      continue;
+    //没有映射不处理
+    if((*pte & PTE_V) == 0)
+      continue;
+    if(PTE_FLAGS(*pte) == PTE_V)
+      panic("uvmunmap_mmap: not a leaf");
+
+    if(do_free){
+      uint64 pa = PTE2PA(*pte);
+      kfree((void*)pa);
+    }
+
+    *pte = 0;
+  }
 }

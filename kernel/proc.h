@@ -88,6 +88,7 @@ struct vma{
   int used; //是否被使用
   uint64 addr;  //虚拟地址起始
   uint64 length; //存储长度
+  uint64 offset; //当前 VMA 起始地址 v->addr 对应文件中的偏移
   int prot;  //权限
   int flags;  //修改后是否写回
   struct file *file;  //映射的文件

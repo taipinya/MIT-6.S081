@@ -5,6 +5,7 @@
 #include "spinlock.h"
 #include "proc.h"
 #include "defs.h"
+#include "fcntl.h"
 
 struct cpu cpus[NCPU];
 
@@ -273,6 +274,36 @@ growproc(int n)
   return 0;
 }
 
+//lab mmap中用于从父进程复制mmap映射的物理页到子进程中
+int
+uvmcopy_mmap(pagetable_t old, pagetable_t new, struct vma *v)
+{
+  for(uint64 a = v->addr; a < v->addr + v->length; a += PGSIZE){
+    uint64 pa = walkaddr(old, a);
+    if(pa == 0)
+      continue;
+
+    char *mem = kalloc();
+    if(mem == 0)
+      return -1;
+
+    memmove(mem, (char*)pa, PGSIZE);
+
+    int perm = PTE_U;
+    if(v->prot & PROT_READ)
+      perm |= PTE_R;
+    if(v->prot & PROT_WRITE)
+      perm |= PTE_W;
+
+    if(mappages(new, a, PGSIZE, (uint64)mem, perm) < 0){
+      kfree(mem);
+      return -1;
+    }
+  }
+
+  return 0;
+}
+
 // Create a new process, copying the parent.
 // Sets up child kernel stack to return as if from fork() system call.
 int
@@ -295,15 +326,15 @@ fork(void)
   }
   np->sz = p->sz;
 
-  //copy vmas from parent to child
-  for(int i = 0; i < NVMA; i++){
-    if(p->vmas[i].used){
-      np->vmas[i] = p->vmas[i];
-      filedup(np->vmas[i].file);  //引用数加一
-    } else {
-      np->vmas[i].used = 0;
+//复制mmap映射的物理页和vma
+  for(i = 0; i < NVMA; i++){
+    np->vmas[i] = p->vmas[i];
+    if(np->vmas[i].used){
+      filedup(np->vmas[i].file);
+      if(uvmcopy_mmap(p->pagetable, np->pagetable, &np->vmas[i]) < 0)
+        return -1;
     }
-}
+  }
 
   // copy saved user registers.
   *(np->trapframe) = *(p->trapframe);
@@ -360,19 +391,20 @@ exit(int status)
   if(p == initproc)
     panic("init exiting");
 
+
+  //取消虚拟映射
+  for(int i = 0; i < NVMA; i++){
+    if(p->vmas[i].used){
+      do_munmap(p->vmas[i].addr, p->vmas[i].length);
+    }
+  }
+
   // Close all open files.
   for(int fd = 0; fd < NOFILE; fd++){
     if(p->ofile[fd]){
       struct file *f = p->ofile[fd];
       fileclose(f);
       p->ofile[fd] = 0;
-    }
-  }
-
-  //取消虚拟映射
-  for(int i = 0; i < NVMA; i++){
-    if(p->vmas[i].used){
-      do_munmap(p->vmas[i].addr, p->vmas[i].length);
     }
   }
 

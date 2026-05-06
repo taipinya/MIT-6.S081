@@ -486,30 +486,109 @@ sys_pipe(void)
   return 0;
 }
 
-int do_munmap(uint64 addr, uint64 length){
-  return -1;
+int
+do_munmap(uint64 addr, uint64 length)
+{
+  struct proc *p = myproc();
+  struct vma *v = 0;
+  uint64 len = PGROUNDUP(length);
+
+  if(len == 0)
+    return -1;
+
+  for(int i = 0; i < NVMA; i++){
+    if(p->vmas[i].used &&
+       addr >= p->vmas[i].addr &&
+       addr < p->vmas[i].addr + p->vmas[i].length){
+      v = &p->vmas[i];
+      break;
+    }
+  }
+
+  if(v == 0)
+    return -1;
+
+  if(addr < v->addr || addr + len > v->addr + v->length)
+    return -1;
+
+  // 题目保证不会中间挖洞，这里还是防御一下
+  if(addr != v->addr && addr + len != v->addr + v->length)
+    return -1;
+
+  // MAP_SHARED：解除映射前写回文件
+  if(v->flags & MAP_SHARED){
+    begin_op();
+
+    for(uint64 a = addr; a < addr + len; a += PGSIZE){
+      uint64 pa = walkaddr(p->pagetable, a);
+
+      // lazy allocation：没访问过的页没有映射，跳过
+      if(pa == 0)
+        continue;
+
+      ilock(v->file->ip);
+      int n = writei(v->file->ip, 0, pa,
+               v->offset + (a - v->addr),
+               PGSIZE);
+      iunlock(v->file->ip);
+
+      if(n < 0){
+        end_op();
+        return -1;
+      }
+    }
+
+    end_op();
+  }
+
+  //mmap专用版解除映射，放在vm.c中。专用是因为mmap有些页没有映射，在uvmunmap中会报错
+  uvmunmap_mmap(p->pagetable, addr, len / PGSIZE, 1);
+
+  // 情况 1：整个 VMA 都被 munmap
+  if(addr == v->addr && len == v->length){
+    fileclose(v->file);
+    v->used = 0;
+    v->addr = 0;
+    v->length = 0;
+    v->offset = 0;
+    v->prot = 0;
+    v->flags = 0;
+    v->file = 0;
+  }
+  // 情况 2：从开头解除一部分
+  else if(addr == v->addr){
+    v->addr += len;
+    v->offset += len;
+    v->length -= len;
+  }
+  // 情况 3：从结尾解除一部分
+  else if(addr + len == v->addr + v->length){
+    v->length -= len;
+  }
+
+  return 0;
 }
 
 uint64
 sys_mmap(void)
 {
   uint64 addr;
-  int length;
+  uint64 length;
   int prot;
   int flags;
   int fd;
-  int offset;
+  uint64 offset;
   struct file *file;
   struct proc *p = myproc();
 
   //取参
   argaddr(0, &addr);
-  argint(1, &length);
+  argaddr(1, &length);
   argint(2, &prot);
   argint(3, &flags);
   if(argfd(4, &fd, &file) < 0)
     return -1;
-  argint(5, &offset);
+  argaddr(5, &offset);
 
   if(length <= 0 || addr != 0 || offset != 0)
     return -1;
@@ -553,6 +632,7 @@ sys_mmap(void)
   p->vmas[idx].prot = prot;
   p->vmas[idx].flags = flags;
   p->vmas[idx].file = filedup(file);
+  p->vmas[idx].offset = offset;
 
   return va;
 }
@@ -560,5 +640,14 @@ sys_mmap(void)
 uint64
 sys_munmap(void)
 {
-  return -1;
+  uint64 addr;
+  int length;
+
+  argaddr(0, &addr);
+  argint(1, &length);
+
+  if(length <= 0)
+    return -1;
+
+  return do_munmap(addr, (uint64)length);
 }
