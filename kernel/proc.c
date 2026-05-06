@@ -17,6 +17,7 @@ struct spinlock pid_lock;
 
 extern void forkret(void);
 static void freeproc(struct proc *p);
+extern int do_munmap(uint64 addr, uint64 length);
 
 extern char trampoline[]; // trampoline.S
 
@@ -141,6 +142,9 @@ found:
   p->context.ra = (uint64)forkret;
   p->context.sp = p->kstack + PGSIZE;
 
+  //初始化vmas数组，置零表示无效
+  memset(p->vmas, 0, sizeof(p->vmas));
+
   return p;
 }
 
@@ -164,6 +168,8 @@ freeproc(struct proc *p)
   p->killed = 0;
   p->xstate = 0;
   p->state = UNUSED;
+  //防止下次复用污染
+  memset(p->vmas, 0, sizeof(p->vmas));
 }
 
 // Create a user page table for a given process,
@@ -289,6 +295,16 @@ fork(void)
   }
   np->sz = p->sz;
 
+  //copy vmas from parent to child
+  for(int i = 0; i < NVMA; i++){
+    if(p->vmas[i].used){
+      np->vmas[i] = p->vmas[i];
+      filedup(np->vmas[i].file);  //引用数加一
+    } else {
+      np->vmas[i].used = 0;
+    }
+}
+
   // copy saved user registers.
   *(np->trapframe) = *(p->trapframe);
 
@@ -350,6 +366,13 @@ exit(int status)
       struct file *f = p->ofile[fd];
       fileclose(f);
       p->ofile[fd] = 0;
+    }
+  }
+
+  //取消虚拟映射
+  for(int i = 0; i < NVMA; i++){
+    if(p->vmas[i].used){
+      do_munmap(p->vmas[i].addr, p->vmas[i].length);
     }
   }
 

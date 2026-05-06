@@ -82,6 +82,16 @@ struct trapframe {
 
 enum procstate { UNUSED, USED, SLEEPING, RUNNABLE, RUNNING, ZOMBIE };
 
+//记录虚拟内存区域
+struct vma{
+  int used; //是否被使用
+  uint64 addr;  //虚拟地址起始
+  uint64 length; //存储长度
+  int prot;  //权限
+  int flags;  //修改后是否写回
+  struct file *file;  //映射的文件
+}
+
 // Per-process state
 struct proc {
   struct spinlock lock;
@@ -105,4 +115,5 @@ struct proc {
   struct file *ofile[NOFILE];  // Open files
   struct inode *cwd;           // Current directory
   char name[16];               // Process name (debugging)
+  struct vms vmas[NVAM];         //一个进程最多允许16个 mmap 区域
 };

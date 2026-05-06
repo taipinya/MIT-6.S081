@@ -485,6 +485,10 @@ sys_pipe(void)
   return 0;
 }
 
+int do_munmap(uint64 addr, uint64 length){
+  return -1;
+}
+
 uint64
 sys_mmap(void)
 {
