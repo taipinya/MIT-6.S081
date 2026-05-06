@@ -1,10 +1,14 @@
-#include "param.h"
 #include "types.h"
+#include "param.h"
 #include "memlayout.h"
-#include "elf.h"
 #include "riscv.h"
 #include "defs.h"
 #include "fs.h"
+#include "spinlock.h"
+#include "proc.h"
+#include "sleeplock.h"
+#include "file.h"
+#include "fcntl.h"
 
 /*
  * the kernel's page table.
@@ -431,4 +435,58 @@ copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
   } else {
     return -1;
   }
+}
+
+//lab mmap，判断地址是否属于进程虚拟地址段
+int mmap_pagefault(uint64 va, uint64 scause)
+{
+  //页对齐
+  uint64 va0 = PGROUNDDOWN(va);
+  //查找对应VMA
+  struct proc *p = myproc();
+  int idx = -1;
+  for(int i = 0; i < NVMA; i++){
+    if(p->vmas[i].used == 1 && va0 > p->vmas[i].addr && va0 < p->vmas[i].addr + p->vmas[i].length){
+      idx = i;
+    }
+  }
+
+  if(idx < 0)
+    return -1;
+  struct vma *v = &p->vmas[idx];
+  if(scause == 15 && !(v->prot & PROT_WRITE))
+    return -1;
+  if(scause == 13 && !(v->prot & PROT_READ))
+    return -1;
+
+  //分配物理页，清零
+  char *mem = kalloc();
+  if(mem == 0)
+    return -1;
+  
+  memset(mem, 0, PGSIZE);
+
+  //从文件读入内容到物理页
+  ilock(v->file->ip);
+  int n = readi(v->file->ip, 0, (uint64)mem, va0 - v->addr, PGSIZE);
+  iunlock(v->file->ip);
+
+  if(n < 0){
+    kfree(mem);
+    return -1;
+  }
+  //设置PTE权限
+  int perm = PTE_U;
+  if(v->prot & PROT_READ)
+    perm |= PTE_R;
+  if(v->prot & PROT_WRITE)
+    perm |= PTE_W;
+
+  //mappages建立映射
+  if(mappages(p->pagetable, va0, PGSIZE, (uint64)mem, perm) < 0){
+    kfree(mem);
+    return -1;
+  }
+
+  return 0;
 }

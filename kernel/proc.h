@@ -83,6 +83,7 @@ struct trapframe {
 enum procstate { UNUSED, USED, SLEEPING, RUNNABLE, RUNNING, ZOMBIE };
 
 //记录虚拟内存区域
+struct file;
 struct vma{
   int used; //是否被使用
   uint64 addr;  //虚拟地址起始
