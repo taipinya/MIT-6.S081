@@ -22,6 +22,7 @@ void sieve(int fd)
   if(fork() == 0)
   {
     //child process
+    close(fd);//close the read end of old pipe
     close(newfd[1]); //child cannot write new pipe
     sieve(newfd[0]);//child process read from new pipe and sieve the numbers
     exit(0);
